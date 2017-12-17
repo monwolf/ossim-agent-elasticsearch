@@ -6,7 +6,7 @@ import logging
 
 
 class ElasticDetector(object):
-    def __init__(self, es_host, plugin_name, rule_id, store_index='ossim_index', verify_certs=True):
+    def __init__(self, es_host, plugin_name, rule_id, store_index='ossim_index', verify_certs=True, windows_size=50):
         if not verify_certs:
             import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -18,7 +18,7 @@ class ElasticDetector(object):
         self.rule_id = rule_id
         self._create_index()
         self._scroll_time = '10m'
-        self._windows_size = 50
+        self._windows_size = windows_size
 
     def _create_index(self):
         es_index = IndicesClient(self._es)
@@ -26,8 +26,8 @@ class ElasticDetector(object):
             logging.info('Index ' + self._store_index + ' already exists. Skipping index creation.')
             return None
         self._es.indices.create(self._store_index)
-        es_mapping = {'last_runtime':
-            {
+        es_mapping = {
+            'last_runtime': {
                 'properties': {
                     'plugin': {'index': 'not_analyzed', 'type': 'string'},
                     'rule_id': {'index': 'not_analyzed', 'type': 'long'},
@@ -41,10 +41,21 @@ class ElasticDetector(object):
     def delete_store_index(self):
         self._es.indices.delete(index=self._store_index)
 
-    def insert_timestamp(self):
+    def clean_store_index(self):
+        query = {
+            "query": {
+                "query_string": {
+                    "query": "rule_id:{0} AND plugin:{1}".format(self.rule_id, self.plugin_name)
+                }
+            },
+        }
+        self._es.delete_by_query(self._store_index, doc_type='last_runtime', query=query)
 
+    def insert_timestamp(self, delete_older=True):
         current_timestamp = self._get_current_timestamp()
-        logging.info("timestamp {}".format(current_timestamp))
+        if delete_older:
+            self.delete_store_index()
+        logging.debug("timestamp {}".format(current_timestamp))
         self._es.index(self._store_index, doc_type='last_runtime',
                        body={'@timestamp': self._get_current_timestamp(), 'plugin': self.plugin_name,
                              'rule_id': self.rule_id})
@@ -102,19 +113,15 @@ class ElasticDetector(object):
             }
         }
         }
-        import json
-        logging.info(json.dumps(query))
         ds_count = self._windows_size
         skip = 0
-        hits = []
+
         while ds_count == self._windows_size:
             res = self._es.search(index=data_index, body=query, size=self._windows_size, from_=skip)
             skip += self._windows_size
             ds_count = len(res['hits']['hits'])
-            hits += res['hits']['hits']
-
-        logging.info(json.dumps(hits))
-        return hits
+            for doc in res['hits']['hits']:
+                yield doc
 
     def do_something(self, data_index="*", query="*", fields=None, timestamp=None):
 
@@ -122,7 +129,10 @@ class ElasticDetector(object):
             timestamp = self.get_last_timestamp()
 
         documents = self.get_matches_since(data_index=data_index, timestamp=timestamp, query=query)
+
         for doc in documents:
+            logging.info(doc)
+            logging.info("")
             source = DotAccessibleDict(doc['_source'])
             group = []
             for field in fields:
@@ -130,7 +140,7 @@ class ElasticDetector(object):
 
             logging.info(group)
             break
-        #self.insert_timestamp()
+        # self.insert_timestamp()
         logging.info("timestamp {}".format(timestamp))
 
 
@@ -153,7 +163,8 @@ if __name__ == "__main__":
     url = 'https://elastic.aireuropa.com'
     index = 'ossim_index'
     logging.getLogger().setLevel(logging.INFO)
-    es = ElasticDetector(url, plugin_name='oauth', rule_id='9999', store_index=index, verify_certs=False)
+    es = ElasticDetector(url, plugin_name='oauth', rule_id='9999',
+                         store_index=index, verify_certs=False, windows_size=2)
     # es.delete_store_index()
     f = u"@timestamp,domain,geoip.ip,trace.parameters_object.username_string,host".split(',')
     print (f)
@@ -161,4 +172,5 @@ if __name__ == "__main__":
     es.do_something("logstash-business-security-oauth-production-*",
                     "environment: production AND operation: token AND NOT trace.statusCode_int: 200",
                     fields=f,
+                    timestamp=1513522800000
                     )
