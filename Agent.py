@@ -47,6 +47,8 @@ import subprocess as sub
 #
 from Config import Conf, Plugin, Aliases, CommandLineOptions
 from ConfigParser import Error as BaseConfigError
+
+from ParserElastic import ParserElastic
 from ParserLog import ParserLog
 from ParserJson import ParserJson
 from Watchdog import Watchdog
@@ -553,6 +555,10 @@ class Agent:
                     self.detector_objs.append(parser)
                 elif plugin.get("config", "source") == "database":
                     parser = ParserDatabase(self.conf, plugin, None)
+                    parser.start()
+                    self.detector_objs.append(parser)
+                elif plugin.get("config", "source") == "elasticsearch":
+                    parser = ParserElastic(self.conf, plugin, None)
                     parser.start()
                     self.detector_objs.append(parser)
 
