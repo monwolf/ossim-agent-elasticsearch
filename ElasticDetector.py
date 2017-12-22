@@ -3,10 +3,12 @@ import time
 from elasticsearch import Elasticsearch
 from elasticsearch.client import IndicesClient
 import logging
+import time
 
 
 class ElasticDetector(object):
-    def __init__(self, es_host, plugin_name, rule_id, store_index='ossim_index', verify_certs=True, windows_size=50):
+    def __init__(self, es_host,
+                 plugin_name, store_index='ossim_index', verify_certs=True, windows_size=50):
         if not verify_certs:
             import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -15,7 +17,8 @@ class ElasticDetector(object):
         self._es = Elasticsearch([es_host], verify_certs=verify_certs)
         self._store_index = store_index
         self.plugin_name = plugin_name
-        self.rule_id = rule_id
+        self.rule_name = ""
+        self.plugin_sid = 1
         self._create_index()
         self._scroll_time = '10m'
         self._windows_size = windows_size
@@ -25,18 +28,23 @@ class ElasticDetector(object):
         if es_index.exists(self._store_index):
             logging.info('Index ' + self._store_index + ' already exists. Skipping index creation.')
             return None
-        self._es.indices.create(self._store_index)
+
         es_mapping = {
-            'last_runtime': {
-                'properties': {
-                    'plugin': {'index': 'not_analyzed', 'type': 'string'},
-                    'rule_id': {'index': 'not_analyzed', 'type': 'long'},
-                    '@timestamp': {'format': 'dateOptionalTime||epoch_millis', 'type': 'date'}
+            "mappings": {
+                'last_runtime': {
+                    'properties': {
+                        'plugin_name': {'index': 'not_analyzed', 'type': 'string'},
+                        'rule_name': {'index': 'not_analyzed', 'type': 'string'},
+                        'plugin_sid': {'index': 'not_analyzed', 'type': 'long'},
+                        '@timestamp': {'format': 'dateOptionalTime||epoch_millis', 'type': 'date'}
+                    }
                 }
             }
         }
 
-        self._es.indices.put_mapping(index=index, doc_type='last_runtime', body=es_mapping)
+        self._es.indices.create(self._store_index, body=es_mapping)
+
+        time.sleep(1)
 
     def delete_store_index(self):
         self._es.indices.delete(index=self._store_index)
@@ -45,7 +53,8 @@ class ElasticDetector(object):
         query = {
             "query": {
                 "query_string": {
-                    "query": "rule_id:{0} AND plugin:{1}".format(self.rule_id, self.plugin_name)
+                    "query": "rule_name:{0} AND plugin_name:{1} AND plugin_sid: {2}".format(
+                        self.rule_name, self.plugin_name, self.plugin_sid)
                 }
             },
         }
@@ -57,8 +66,8 @@ class ElasticDetector(object):
             self.delete_store_index()
         logging.debug("timestamp {}".format(current_timestamp))
         self._es.index(self._store_index, doc_type='last_runtime',
-                       body={'@timestamp': self._get_current_timestamp(), 'plugin': self.plugin_name,
-                             'rule_id': self.rule_id})
+                       body={'@timestamp': self._get_current_timestamp(), 'plugin_name': self.plugin_name,
+                             'rule_name': self.rule_name, 'plugin_sid': self.plugin_sid})
 
     @staticmethod
     def _get_current_timestamp(offset_seconds=0):
@@ -69,7 +78,8 @@ class ElasticDetector(object):
         query = {
             "query": {
                 "query_string": {
-                    "query": "rule_id:{0} AND plugin:{1}".format(self.rule_id, self.plugin_name)
+                    "query": "rule_name:{0} AND plugin_name:{1} AND plugin_sid: {2}".format(
+                        self.rule_name, self.plugin_name, self.plugin_sid)
                 }
             },
             "sort": {'@timestamp': {'order': 'desc'}}
@@ -163,7 +173,7 @@ if __name__ == "__main__":
     url = 'https://elastic.aireuropa.com'
     index = 'ossim_index'
     logging.getLogger().setLevel(logging.INFO)
-    es = ElasticDetector(url, plugin_name='oauth', rule_id='9999',
+    es = ElasticDetector(url, rule_name=-1, plugin_name='oauth',
                          store_index=index, verify_certs=False, windows_size=2)
     # es.delete_store_index()
     f = u"@timestamp,domain,geoip.ip,trace.parameters_object.username_string,host".split(',')
