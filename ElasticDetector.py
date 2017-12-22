@@ -1,5 +1,3 @@
-import time
-
 from elasticsearch import Elasticsearch
 from elasticsearch.client import IndicesClient
 import logging
@@ -7,14 +5,14 @@ import time
 
 
 class ElasticDetector(object):
-    def __init__(self, es_host,
-                 plugin_name, store_index='ossim_index', verify_certs=True, windows_size=50):
+    def __init__(self, es_host, plugin_name, store_index='ossim_index',
+                 verify_certs=True, windows_size=50, credentials=None):
         if not verify_certs:
             import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
             urllib3.disable_warnings(UserWarning)
 
-        self._es = Elasticsearch([es_host], verify_certs=verify_certs)
+        self._es = Elasticsearch([es_host], verify_certs=verify_certs, http_auth=credentials)
         self._store_index = store_index
         self.plugin_name = plugin_name
         self.rule_name = ""
@@ -173,7 +171,7 @@ if __name__ == "__main__":
     url = 'https://elastic.aireuropa.com'
     index = 'ossim_index'
     logging.getLogger().setLevel(logging.INFO)
-    es = ElasticDetector(url, rule_name=-1, plugin_name='oauth',
+    es = ElasticDetector(url, plugin_name='oauth',
                          store_index=index, verify_certs=False, windows_size=2)
     # es.delete_store_index()
     f = u"@timestamp,domain,geoip.ip,trace.parameters_object.username_string,host".split(',')

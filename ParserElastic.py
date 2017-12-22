@@ -16,7 +16,7 @@ class ParserElastic(Detector):
     def __init__(self, conf, plugin, conn):
         self._conf = conf  # config.cfg info
         self._plugin = plugin  # plugins/X.cfg info
-        self.rules = []  # list of RuleMatch objects
+        self.rules = []  # list of ElasticRules objects
         self.conn = conn
         self.stop_processing = False
         self.sleep_time = 10
@@ -38,14 +38,16 @@ class ParserElastic(Detector):
         return group
 
     def _plugin_config(self):
-        self.name = self._plugin.get("config", "name")
         self.plugin_id = self._plugin.get("DEFAULT", "plugin_id")
+        self.name = self._plugin.get("config", "name")
         self.elastic_url = self._plugin.get("config", "elastic_url")
         self.store_index = self._plugin.get("config", "store_index")
-        self.str_verify_certs = self._plugin.get("config", "verify_certs")
-        self.verify_certs = True
-        if self.str_verify_certs.lower() == "no":
-            self.verify_certs = False
+        self.verify_certs = self._plugin.getboolean("config", "verify_certs")
+        user = self._plugin.get("config", "elastic_user")
+        password = self._plugin.get("config", "elastic_password")
+        self.elastic_credentials = None
+        if user and password:
+            self.elastic_credentials = (user, password)
 
     def _parse_rules(self):
         try:
@@ -61,13 +63,12 @@ class ParserElastic(Detector):
     def process(self):
         self.loginfo(Lazyformat("Starting process ParserElastic"))
         try:
-            es = ElasticDetector(self.elastic_url, plugin_name=self.name,
-                             store_index=self.store_index, verify_certs=self.verify_certs)
+            es = ElasticDetector(self.elastic_url, plugin_name=self.name, store_index=self.store_index,
+                                 verify_certs=self.verify_certs,credentials=self.elastic_credentials)
         except Exception as ex:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.logerror(Lazyformat("process[{}]:{} {}".format(exc_tb.tb_lineno, exc_type, ex)))
             return
-
 
         while not self.stop_processing:
             for rule in self.rules:
@@ -119,4 +120,4 @@ class ElasticRules(object):
         self.original_rule = rule
 
     def __str__(self):
-        return "[{}][{}] -> {}".format(self.data_index, self.plugin_sid, self.query)
+        return "[{}][{}][{}] -> {}".format(self.name, self.data_index, self.plugin_sid, self.query)
