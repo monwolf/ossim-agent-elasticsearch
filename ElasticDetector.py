@@ -172,7 +172,6 @@ class ElasticDetector(object):
 
             logging.info(group)
             break
-        # self.insert_timestamp()
         logging.info("timestamp {}".format(timestamp))
 
 
@@ -190,19 +189,3 @@ class DotAccessibleDict(object):
             val = val[key]
         return val
 
-
-if __name__ == "__main__":
-    url = 'https://elastic.aireuropa.com'
-    index = 'ossim_index'
-    logging.getLogger().setLevel(logging.INFO)
-    es = ElasticDetector(url, plugin_name='oauth',
-                         store_index=index, verify_certs=False, windows_size=2)
-    # es.delete_store_index()
-    f = u"@timestamp,domain,geoip.ip,trace.parameters_object.username_string,host".split(',')
-    print (f)
-    # f = u"sort".split(',')
-    es.do_something("logstash-business-security-oauth-production-*",
-                    "environment: production AND operation: token AND NOT trace.statusCode_int: 200",
-                    fields=f,
-                    timestamp=1513522800000
-                    )
